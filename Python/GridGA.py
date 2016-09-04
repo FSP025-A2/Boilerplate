@@ -5,19 +5,22 @@ from random import shuffle
 from math import sqrt
 from time import time
 from itertools import permutations
+import matplotlib.pyplot as plt
+import cProfile, pstats, io
 
 
 class NodesLeastDistanceGA:
     """ Traveling salesman problem genetic algorithm """
 
-    def __init__(self, parent):
+    def __init__(self, parent, side):
         """ Constructor """
+        self._parent = parent
+        self._side = side
 
         self._mutate_rate = 0.07
-        self._population_size = 30
-        self._new_generation_size = 60
-        self._rounds = 1000
-        self._parent = parent
+        self._population_size = 60 if len(parent) > 10 else 10
+        self._new_generation_size = self._population_size*2
+        self._rounds = 100
         self._genlen = len(parent)
         self._cached_distances = {}
         self._cached_fitness = {}
@@ -35,7 +38,7 @@ class NodesLeastDistanceGA:
         fittest = min(population, key=self.fitness)
 
         total_time = time()
-        #timeit = 0
+        # timeit = 0
         for r in range(self._rounds):
             new_pop = []
             while len(new_pop) < self._new_generation_size:
@@ -52,21 +55,23 @@ class NodesLeastDistanceGA:
             new_fittest = min(population, key=self.fitness)
             if self.fitness(fittest) > self.fitness(new_fittest):
                 fittest = new_fittest
-            #print(r, self.fitness(min(population, key=self.fitness)))
+            if r % 50 == 0:
+                print(r, self.fitness(min(population, key=self.fitness)))
 
-            #start = time()
+            # start = time()
             population = self.selection(new_pop)
             if fittest not in population:
                 population += [fittest]
-            #timeit += time() - start
+            # timeit += time() - start
 
         for ind in sorted(population, key=self.fitness):
             print("Path: {}, Fitness: {:.3f}".format(ind, self.fitness(ind)))
 
         print("Best path: {}, fittness: {:.3f}".format(fittest, self.fitness(fittest)))
-        print("Cached-> Fitness:{}, Distances{}".format(len(self._cached_fitness), len(self._cached_distances)))
-        #print("\n", timeit)
+        print("Cached-> Fitness:{}, Distances: {}".format(len(self._cached_fitness), len(self._cached_distances)))
+        # print("\n", timeit)
         print("Execution Time: {:.3f}s".format(time()-total_time))
+        self.plot(fittest)
 
     def selection(self, new_pop):
         """ Determines which individuals that survives. Shuffle to destroy symmetry selection over rounds. """
@@ -82,7 +87,7 @@ class NodesLeastDistanceGA:
     def select(self, pop):
         """ Selects a individual that might have a low fitness. """
 
-        pop_total_fit = sum(1 / self.fitness(p) for p in pop)
+        pop_total_fit = sum(1.0 / self.fitness(p) for p in pop)
         limit = uniform(0.0, pop_total_fit)
         c = 0
         for p in pop:
@@ -147,7 +152,7 @@ class NodesLeastDistanceGA:
     def mutate(child):
         """ Swaps place of two gens. """
 
-        i1, i2 = sample(range(len(child)), 2)
+        i1, i2 = sample(range(1, len(child)-1), 2)
         child[i1], child[i2] = child[i2], child[i1]
         return child
 
@@ -164,33 +169,59 @@ class NodesLeastDistanceGA:
     def generate_population(self):
         """ Creates the initial populations. """
 
-        pop = [sample(self._parent, len(self._parent)) for _ in range(self._population_size)]
+        pop = [self._parent[:1]+sample(
+            self._parent[1:-1], len(self._parent)-2)+self._parent[-1:]
+               for _ in range(self._population_size)]
         for p in pop:
             h = hash(tuple(p))
             self._cached_fitness[h] = self.fitness(p)
         return pop
+
+    def plot(self, path):
+        plt.axis([-1, self._side+1, -1, self._side+1])
+        for i in range(0, len(path)-1):
+            plt.plot([path[i][0], path[i+1][0]], [path[i][1], path[i+1][1]], color="brown", marker="o")
+        plt.show()
 
     def correct_ans(self, nodes):
         """ Very bad bruteforce approach. """
 
         start = time()
         best = nodes
-        for path in permutations(nodes):
+        for path in permutations(nodes[1:-1]):
+            path = nodes[:1]+list(path)+nodes[-1:]
             if self.fitness(best) > self.fitness(path):
                 best = path
         print("Correct ans should be: {}: fitness: {:.3f}, solutions: {}".format(
             str(best), self.fitness(best), len(list(permutations(nodes)))))
         print("Bruteforce approch: {:.3f}".format(time()-start))
+        self.plot(best)
+
+    def profile(self):
+        pr = cProfile.Profile()
+        pr.enable()
+        self.algorithm()
+        pr.disable()
+        s = io.StringIO()
+        sortby = 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        stats = s.getvalue().split("\n")
+        stats = "\n".join([x for x in stats if "GridGA.py" in x])
+        print(stats)
 
 
 def main():
     nodes = [(13, 2), (1, 12), (12, 5), (19, 6), (2, 10), (15, 15), (5, 11), (17, 9),
-             (10, 18), (17, 5), (13, 12)#, (1, 17), (2, 6), (7, 16), (19, 2), (3, 7),
+             (10, 18), (17, 5), #(13, 12), #(1, 17), (2, 6), (7, 16), (19, 2), (3, 7),
              #(10, 9), (5, 19), (1, 2), (9, 2)
              ]
-    ga = NodesLeastDistanceGA(nodes)
+    nodes += nodes[:1]
+    ga = NodesLeastDistanceGA(nodes, 20)
+
     ga.algorithm()
-    ga.correct_ans(nodes)
+    if len(nodes) < 11:
+        ga.correct_ans(nodes)
 
 
 if __name__ == '__main__':
