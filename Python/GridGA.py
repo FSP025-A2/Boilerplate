@@ -6,13 +6,15 @@ from math import sqrt
 from time import time
 from itertools import permutations
 import matplotlib.pyplot as plt
-import cProfile, pstats, io
+import cProfile
+import pstats
+import io
 
 
 class NodesLeastDistanceGA:
     """ Traveling salesman problem genetic algorithm """
 
-    def __init__(self, parent, side):
+    def __init__(self, parent, side, verbose=False):
         """ Constructor """
         self._parent = parent
         self._side = side
@@ -20,8 +22,9 @@ class NodesLeastDistanceGA:
         self._mutate_rate = 0.07
         self._population_size = 60 if len(parent) > 10 else 10
         self._new_generation_size = self._population_size*2
-        self._rounds = 100
+        self._rounds = 200
         self._genlen = len(parent)
+        self._verbose = verbose
         self._cached_distances = {}
         self._cached_fitness = {}
 
@@ -35,10 +38,9 @@ class NodesLeastDistanceGA:
         """
 
         population = self.generate_population()
-        fittest = min(population, key=self.fitness)
+        fitest = min(population, key=self.fitness)
 
         total_time = time()
-        # timeit = 0
         for r in range(self._rounds):
             new_pop = []
             while len(new_pop) < self._new_generation_size:
@@ -53,25 +55,27 @@ class NodesLeastDistanceGA:
                         new_pop[i] = self.mutate(new_pop[i])
 
             new_fittest = min(population, key=self.fitness)
-            if self.fitness(fittest) > self.fitness(new_fittest):
-                fittest = new_fittest
+            if self.fitness(fitest) > self.fitness(new_fittest):
+                fitest = new_fittest
             if r % 50 == 0:
                 print(r, self.fitness(min(population, key=self.fitness)))
 
-            # start = time()
             population = self.selection(new_pop)
-            if fittest not in population:
-                population += [fittest]
-            # timeit += time() - start
+            if fitest not in population:
+                population += [fitest]
 
-        for ind in sorted(population, key=self.fitness):
-            print("Path: {}, Fitness: {:.3f}".format(ind, self.fitness(ind)))
+        self.result(population, fitest, total_time)
 
-        print("Best path: {}, fittness: {:.3f}".format(fittest, self.fitness(fittest)))
-        print("Cached-> Fitness:{}, Distances: {}".format(len(self._cached_fitness), len(self._cached_distances)))
-        # print("\n", timeit)
-        print("Execution Time: {:.3f}s".format(time()-total_time))
-        self.plot(fittest)
+    def result(self, population, fitest, total_time):
+        if self._verbose:
+            for ind in sorted(population, key=self.fitness):
+                print("Path: {}, Fitness: {:.3f}".format(ind, self.fitness(ind)))
+
+            print("Cached-> Fitness:{}, Distances: {}".format(len(self._cached_fitness), len(self._cached_distances)))
+        print("Execution Time: {:.3f}s".format(time() - total_time))
+        print("Best path found: {}, fitness: {:.3f}".format(fitest, self.fitness(fitest)))
+        if self._verbose:
+            self.plot(fitest)
 
     def selection(self, new_pop):
         """ Determines which individuals that survives. Shuffle to destroy symmetry selection over rounds. """
@@ -117,16 +121,13 @@ class NodesLeastDistanceGA:
     def crossover(father, mother):
         """
         Cross two individual thorough a gen by gen approach.
+        For readability and optimization this function is kept ugly.
         """
         child = [None]*len(father)
         rate = 0.5
         for gen in father:
-            if random() > rate:
-                parent = father
-                other_parent = mother
-            else:
-                parent = mother
-                other_parent = father
+            parent, other_parent = (father, mother) if random() > rate \
+                else (mother, father)
 
             key = None
             for key, value in enumerate(parent):
@@ -141,11 +142,11 @@ class NodesLeastDistanceGA:
             if not child[key]:
                 child[key] = gen
                 continue
+
             for key, value in enumerate(child):
                 if not value:
                     child[key] = gen
                     break
-
         return child
 
     @staticmethod
@@ -159,8 +160,8 @@ class NodesLeastDistanceGA:
     def point_distance(self, p1, p2):
         """ Calculates the distance between two points and cache it. """
 
-        nodes = p1, p2
-        if nodes in self._cached_distances:
+        nodes = hash((p1, p2))
+        if nodes in self._cached_distances.keys():
             return self._cached_distances[nodes]
         d = sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
         self._cached_distances[nodes] = d
@@ -186,6 +187,9 @@ class NodesLeastDistanceGA:
     def correct_ans(self, nodes):
         """ Very bad bruteforce approach. """
 
+        if len(nodes) > 11:
+            print("Not a good idea.")
+            raise Exception
         start = time()
         best = nodes
         for path in permutations(nodes[1:-1]):
@@ -218,10 +222,7 @@ def main():
              ]
     nodes += nodes[:1]
     ga = NodesLeastDistanceGA(nodes, 20)
-
-    ga.algorithm()
-    if len(nodes) < 11:
-        ga.correct_ans(nodes)
+    ga.profile()
 
 
 if __name__ == '__main__':
